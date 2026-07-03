@@ -586,6 +586,14 @@ EOF
   chown root:root "${dropin_dir}/10-startup-resilience.conf"
 }
 
+unit_file_exists() {
+  local unit_name="$1"
+
+  systemctl list-unit-files --no-legend "${unit_name}" 2>/dev/null \
+    | awk '{ print $1 }' \
+    | grep -Fxq "${unit_name}"
+}
+
 ensure_httpd_selinux_for_home_vhosts() {
   if ! command -v selinuxenabled >/dev/null 2>&1 || ! selinuxenabled; then
     return 0
@@ -943,6 +951,20 @@ EOF
   chown root:root "${MARIADB_TUNING_CONF}"
 }
 
+wait_for_mariadb_ready() {
+  local i
+
+  for i in {1..60}; do
+    if mariadb -uroot -NBe "SELECT 1" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "ERROR: MariaDB が起動しましたが、root 接続を確認できません。" >&2
+  return 1
+}
+
 secure_mariadb_initial_state() {
   if mariadb -uroot -NBe "SHOW TABLES FROM mysql LIKE 'global_priv'" | grep -qx "global_priv"; then
     mariadb -uroot <<'SQL'
@@ -1130,9 +1152,9 @@ EOF
   chmod 755 "${CERTBOT_RELOAD_HOOK}"
   chown root:root "${CERTBOT_RELOAD_HOOK}"
 
-  if systemctl list-unit-files certbot-renew.timer >/dev/null 2>&1; then
+  if unit_file_exists certbot-renew.timer; then
     systemctl enable --now certbot-renew.timer
-  elif systemctl list-unit-files certbot.timer >/dev/null 2>&1; then
+  elif unit_file_exists certbot.timer; then
     systemctl enable --now certbot.timer
   fi
 }
@@ -1665,7 +1687,9 @@ setup_logging_security_stack() {
   systemctl enable --now fail2ban
   systemctl restart fail2ban
   systemctl disable --now exim >/dev/null 2>&1 || true
-  systemctl enable --now logwatch.timer
+  if unit_file_exists logwatch.timer; then
+    systemctl enable --now logwatch.timer
+  fi
   systemctl enable --now aide-check.timer
 
   "${HTTPD_USER_LOG_PERMS_HELPER}" || true
@@ -1804,6 +1828,7 @@ systemctl restart httpd
 install -d -m 750 -o mysql -g mysql /var/log/mariadb
 systemctl enable --now mariadb
 systemctl restart mariadb
+wait_for_mariadb_ready
 secure_mariadb_initial_state
 
 echo "Apache/MariaDB 設定を反映しました。vHost テンプレート: ${HTTPD_VHOST_TEMPLATE}"
