@@ -2,7 +2,7 @@
 set -euo pipefail
 
 URL="${SCRIPT_URL:-https://raw.githubusercontent.com/rains-jp/tools/main/alma-linux-initial-setup.sh}"
-SHA="${SCRIPT_SHA256-3a2ca95b0b89f4f26fe8e8849ed89bf11b3c41db02fa26e2ccb79e08d3f5f638}"
+SHA="${SCRIPT_SHA256-86730943255ba7ed5c815a6c03e313da7cea30ad4b8b9e7e6ec6bb4de51b8a3f}"
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 

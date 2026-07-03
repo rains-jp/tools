@@ -206,22 +206,33 @@ ensure_webmin_admin_acl() {
   rm -f "${tmp}"
 }
 
-open_firewall_port() {
-  local port_proto="$1"
+ensure_firewalld_running() {
+  local i
 
   if ! command -v firewall-cmd >/dev/null 2>&1; then
     dnf install -y firewalld
   fi
 
-  if ! firewall-cmd --state >/dev/null 2>&1; then
-    firewall-offline-cmd --add-port="${port_proto}" >/dev/null 2>&1 || true
-    systemctl enable --now firewalld
-  else
-    systemctl enable firewalld
-  fi
+  systemctl enable firewalld
+  systemctl start firewalld >/dev/null 2>&1 || true
 
-  firewall-cmd --permanent --add-port="${port_proto}"
-  firewall-cmd --add-port="${port_proto}" >/dev/null 2>&1 || true
+  for i in {1..10}; do
+    firewall-cmd --state >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+
+  return 1
+}
+
+open_firewall_port() {
+  local port_proto="$1"
+
+  if ensure_firewalld_running; then
+    firewall-cmd --permanent --add-port="${port_proto}"
+    firewall-cmd --add-port="${port_proto}" >/dev/null 2>&1 || true
+  else
+    firewall-offline-cmd --add-port="${port_proto}" >/dev/null 2>&1 || true
+  fi
 }
 
 ensure_required_firewall_ports() {
@@ -231,11 +242,16 @@ ensure_required_firewall_ports() {
     open_firewall_port "${port_proto}"
   done
 
-  firewall-cmd --reload
+  if firewall-cmd --state >/dev/null 2>&1; then
+    firewall-cmd --reload
+  fi
 }
 
 close_default_ssh_firewall_access() {
   if ! firewall-cmd --state >/dev/null 2>&1; then
+    firewall-offline-cmd --remove-service=ssh >/dev/null 2>&1 || true
+    firewall-offline-cmd --remove-service=cockpit >/dev/null 2>&1 || true
+    firewall-offline-cmd --remove-port=22/tcp >/dev/null 2>&1 || true
     return 0
   fi
 
